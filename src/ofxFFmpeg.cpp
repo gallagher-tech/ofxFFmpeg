@@ -221,6 +221,8 @@ void Recorder::processFrame()
 		TimePoint lastFrameTime = Clock::now();
 		const float framedur    = 1.f / m_settings.fps;
 
+		bool needsQuit = false;
+
 		while ( m_frames.size() ) {  // allows finish processing queue after we call stop()
 
 			// feed frames at constant fps
@@ -235,8 +237,11 @@ void Recorder::processFrame()
 				ofPixels *pixels = nullptr;
 
 				m_mtx.lock();
-				m_frames.consume( pixels );
+				bool ok = m_frames.consume( pixels );
 				m_mtx.unlock();
+				if ( !ok ) {
+					LOG_ERROR() << "Error consuming pixels from queue!";
+				}
 
 				if ( /*m_frames.consume( pixels ) && */ pixels ) {
 					const unsigned char *data = pixels->getData();
@@ -246,16 +251,27 @@ void Recorder::processFrame()
 					size_t written = m_ffmpegPipe ? fwrite( data, sizeof( char ), dataLength, m_ffmpegPipe ) : 0;
 					m_pipeMtx.unlock();
 
-					if ( written <= 0 ) {
-						LOG_WARNING() << "Unable to write the frame.";
+					if ( written <= 0 || written != dataLength || ferror( m_ffmpegPipe ) ) {
+						LOG_ERROR() << "Error while writing frame to ffmpeg pipe! Cancelling recording!";
+						needsQuit = true;
 					}
 
 					pixels->clear();
 					delete pixels;
 
 					lastFrameTime = Clock::now();
+				} else {
+					LOG_ERROR() << "Error, queued pixels were null!";
 				}
+				LOG_NOTICE() << "fed frame to ffmpeg after " << delta << " seconds";
 			}
+
+			if (needsQuit) {
+				break;
+			}
+		}
+		if (needsQuit) {
+			break;
 		}
 	}
 
