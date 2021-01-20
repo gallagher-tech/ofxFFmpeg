@@ -29,24 +29,28 @@ public:
 	size_t addFrame( const ofPixels& pixels );  // returns the number of frames added to queue
 
 	bool isRecording() const { return m_isRecording.load(); }
-	bool isReady() const { return m_isRecording.load() == false && m_frames.size() == 0; }
+	bool isReady() const { return m_isReady.load(); }
 	float getRecordedDuration() const { return m_nAddedFrames / m_settings.fps; }
-	size_t numFramesInQueue() { return m_frames.size(); }
-
+	int numFramesInQueue();
 
 	const RecorderSettings& getSettings() const { return m_settings; }
 
 protected:
 	RecorderSettings m_settings;
-	std::atomic<bool> m_isRecording;
+	std::atomic<bool> m_isRecording, m_isReady, m_shouldQuitProcessing;  // isReady means ffmpeg pipe is closed
 	FILE* m_ffmpegPipe = nullptr;
 	TimePoint m_recordStartTime, m_lastFrameTime;
 	unsigned int m_nAddedFrames;
 	std::thread m_thread;
 	LockFreeQueue<ofPixels*> m_frames;
-	std::mutex m_mtx, m_pipeMtx;
+	std::mutex m_queueMtx, m_pipeMtx;
 
 	void processFrame();
+	void clearQueue();
+
+	bool openPipe( const std::string& cmd );
+	bool closePipe();
+	bool isPipeOpen();
 };
 
 }  // namespace ofxFFmpeg
